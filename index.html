@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#4a148c">
+    <title>مطابقة الأيقونات العربية - تحدي لا ينتهي</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☕</text></svg>">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- شاشة التحميل -->
+    <div id="loading-screen">
+        <div class="loader"></div>
+        <div class="loading-text">جاري تحميل اللعبة...</div>
+    </div>
+
+    <!-- التطبيق الرئيسي -->
+    <div id="app">
+        <!-- الشريط العلوي -->
+        <div class="top-bar">
+            <div class="player-info">
+                <div class="player-stats">
+                    <div class="stat-item">
+                        <span class="stat-icon">⭐</span>
+                        <span id="total-score" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">🪙</span>
+                        <span id="total-coins" class="stat-value">500</span>
+                    </div>
+                </div>
+            </div>
+            <div class="level-badge">
+                <span id="current-level">المستوى 1</span>
+                <span id="player-xp">XP: 0/100</span>
+            </div>
+        </div>
+
+        <!-- القائمة الرئيسية -->
+        <div id="main-menu">
+            <h1 class="game-title">مطابقة الأيقونات العربية</h1>
+            <p class="game-subtitle">تحدي لا ينتهي - استمتع بتجربة عربية أصيلة</p>
+            
+            <div class="menu-grid">
+                <div class="menu-card" onclick="startGame()">
+                    <span class="card-icon">🎮</span>
+                    <h3 class="card-title">ابدأ اللعب</h3>
+                    <p class="card-desc">استمر من حيث توقفت أو ابدأ مستوى جديداً</p>
+                </div>
+                
+                <div class="menu-card" onclick="showLevels()">
+                    <span class="card-icon">🏆</span>
+                    <h3 class="card-title">المستويات</h3>
+                    <p class="card-desc">اختر من بين 100+ مستوى متنوع</p>
+                </div>
+                
+                <div class="menu-card" onclick="showShop()">
+                    <span class="card-icon">🛒</span>
+                    <h3 class="card-title">المتجر</h3>
+                    <p class="card-desc">اشترِ عناصر مساعدة ومكافآت خاصة</p>
+                </div>
+                
+                <div class="menu-card" onclick="showProfile()">
+                    <span class="card-icon">👤</span>
+                    <h3 class="card-title">ملفي</h3>
+                    <p class="card-desc">شاهد إنجازاتك وإحصائياتك</p>
+                </div>
+            </div>
+
+            <div class="menu-buttons">
+                <button class="game-btn btn-primary btn-large" onclick="startGame()">
+                    <span>🎮</span> ابدأ اللعب
+                </button>
+                <button class="game-btn btn-secondary" onclick="showSettings()">
+                    <span>⚙️</span> الإعدادات
+                </button>
+                <button class="game-btn btn-secondary" onclick="showTutorial()">
+                    <span>📚</span> كيفية اللعب
+                </button>
+            </div>
+        </div>
+
+        <!-- شاشة اللعبة -->
+        <div id="game-screen">
+            <div class="game-header">
+                <div class="level-info">
+                    <h2 class="level-name" id="level-name">سوق المدينة</h2>
+                    <p class="level-desc" id="level-desc">المستوى 1 من 100</p>
+                </div>
+                
+                <div class="game-meta">
+                    <div class="meta-item">
+                        <div class="meta-value" id="moves-left">25</div>
+                        <div class="meta-label">تحركات</div>
+                    </div>
+                    <div class="meta-item">
+                        <div class="meta-value" id="current-score">0</div>
+                        <div class="meta-label">نقاط</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="game-content">
+                <!-- لوحة اللعبة -->
+                <div class="game-board-container">
+                    <div id="game-board"></div>
+                    
+                    <div class="level-progress">
+                        <div class="progress-header">
+                            <span>تقدم المستوى</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- الشريط الجانبي -->
+                <div class="game-sidebar">
+                    <!-- الأهداف -->
+                    <div class="sidebar-section">
+                        <h3 class="section-title">🎯 أهداف المستوى</h3>
+                        <div class="goals-list" id="goals-list"></div>
+                    </div>
+
+                    <!-- العناصر المساعدة -->
+                    <div class="sidebar-section">
+                        <h3 class="section-title">✨ العناصر المساعدة</h3>
+                        <div class="powerups-grid" id="powerups-grid"></div>
+                    </div>
+
+                    <!-- المهام اليومية -->
+                    <div class="sidebar-section">
+                        <h3 class="section-title">📅 مهام اليوم</h3>
+                        <div class="daily-quests" id="daily-quests"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- أزرار التحكم -->
+            <div class="game-footer">
+                <button class="game-btn btn-secondary" onclick="showHint()">
+                    <span>💡</span> تلميح
+                </button>
+                <button class="game-btn btn-secondary" onclick="shuffleBoard()">
+                    <span>🔀</span> إعادة ترتيب
+                </button>
+                <button class="game-btn btn-primary" onclick="pauseGame()">
+                    <span>⏸️</span> إيقاف مؤقت
+                </button>
+            </div>
+        </div>
+
+        <!-- شاشة المتجر -->
+        <div id="shop-screen">
+            <h2 class="popup-title">🛒 متجر اللعبة</h2>
+            <div class="shop-grid" id="shop-items"></div>
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="showMainMenu()">
+                    <span>🏠</span> العودة
+                </button>
+            </div>
+        </div>
+
+        <!-- شاشة الملف الشخصي -->
+        <div id="profile-screen">
+            <div class="profile-header">
+                <div class="profile-avatar" id="player-avatar">👤</div>
+                <div>
+                    <h2 id="player-name">اللاعب</h2>
+                    <p id="player-rank">الرتبة: مبتدئ</p>
+                </div>
+            </div>
+            
+            <div class="profile-stats" id="player-stats"></div>
+            
+            <h3 class="section-title">🏆 الإنجازات</h3>
+            <div class="achievement-grid" id="achievements-grid"></div>
+            
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="showMainMenu()">
+                    <span>🏠</span> العودة
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- الشاشات المنبثقة -->
+    <!-- نافذة الإيقاف المؤقت -->
+    <div id="pause-popup" class="popup-overlay">
+        <div class="popup-content">
+            <h2 class="popup-title">⏸️ اللعبة متوقفة</h2>
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="resumeGame()">
+                    <span>▶️</span> استمرار
+                </button>
+                <button class="game-btn btn-secondary" onclick="restartLevel()">
+                    <span>🔄</span> إعادة
+                </button>
+                <button class="game-btn btn-secondary" onclick="showMainMenu()">
+                    <span>🏠</span> القائمة
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة الفوز -->
+    <div id="win-popup" class="popup-overlay">
+        <div class="popup-content">
+            <h2 class="popup-title">🎉 مبروك! فزت</h2>
+            
+            <div class="popup-stats">
+                <div class="popup-stat">
+                    <div class="stat-label">التحركات المتبقية</div>
+                    <div id="win-moves" class="stat-value">0</div>
+                </div>
+                <div class="popup-stat">
+                    <div class="stat-label">النقاط المحققة</div>
+                    <div id="win-score" class="stat-value">0</div>
+                </div>
+                <div class="popup-stat">
+                    <div class="stat-label">المكافأة</div>
+                    <div id="win-bonus" class="stat-value">+0</div>
+                </div>
+            </div>
+
+            <div class="rewards-container" id="level-rewards"></div>
+
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="nextLevel()">
+                    <span>➡️</span> المستوى التالي
+                </button>
+                <button class="game-btn btn-secondary" onclick="playAgain()">
+                    <span>🔄</span> إعادة اللعب
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة الخسارة -->
+    <div id="lose-popup" class="popup-overlay">
+        <div class="popup-content">
+            <h2 class="popup-title">😔 انتهت التحركات</h2>
+            <p class="popup-message">لم تحقق جميع الأهداف في التحركات المتاحة</p>
+            
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="restartLevel()">
+                    <span>🔄</span> حاول مرة أخرى
+                </button>
+                <button class="game-btn btn-secondary" onclick="showMainMenu()">
+                    <span>🏠</span> القائمة الرئيسية
+                </button>
+                <button class="game-btn btn-secondary" onclick="useContinue()">
+                    <span>✨</span> استمر بـ 50 ذهب
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة المستويات -->
+    <div id="levels-popup" class="popup-overlay">
+        <div class="popup-content">
+            <h2 class="popup-title">🏆 اختر مستوى</h2>
+            <div id="levels-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 20px 0;"></div>
+            <div class="popup-buttons">
+                <button class="game-btn btn-primary" onclick="closeLevels()">
+                    <span>🏠</span> العودة
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- التحكم بالصوت -->
+    <div class="audio-controls">
+        <div class="audio-btn" onclick="toggleMusic()" id="music-btn">🎵</div>
+        <div class="audio-btn" onclick="toggleSound()" id="sound-btn">🔊</div>
+    </div>
+
+    <!-- مؤشر السحب (للجوال) -->
+    <div class="swipe-indicator">⇦ اسحب للتحكم ⇨</div>
+
+    <!-- منطقة عرض الكومبو -->
+    <div class="combo-display" id="combo-display"></div>
+
+    <!-- منطقة الإشعارات -->
+    <div id="notification-area"></div>
+
+    <script src="game.js"></script>
+    <script>
+        // ============================================
+        // ملف Manifest للتطبيق التقدمي (PWA)
+        // ============================================
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(
+                    registration => {
+                        console.log('ServiceWorker registered:', registration.scope);
+                    },
+                    error => {
+                        console.log('ServiceWorker registration failed:', error);
+                    }
+                );
+            });
+        }
+
+        // ============================================
+        // دعم تثبيت التطبيق
+        // ============================================
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // عرض زر التثبيت
+            const installBtn = document.createElement('button');
+            installBtn.textContent = '📲 تثبيت التطبيق';
+            installBtn.className = 'game-btn btn-primary';
+            installBtn.style.position = 'fixed';
+            installBtn.style.bottom = '20px';
+            installBtn.style.left = '50%';
+            installBtn.style.transform = 'translateX(-50%)';
+            installBtn.style.zIndex = '1000';
+            
+            installBtn.onclick = async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`User response: ${outcome}`);
+                    deferredPrompt = null;
+                    installBtn.remove();
+                }
+            };
+            
+            document.body.appendChild(installBtn);
+            
+            // إخفاء الزر بعد 30 ثانية
+            setTimeout(() => {
+                if (installBtn.parentNode) {
+                    installBtn.remove();
+                }
+            }, 30000);
+        });
+    </script>
+</body>
+</html>

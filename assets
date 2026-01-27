@@ -1,0 +1,57 @@
+// نظام المستويات الموسع
+class LevelSystem {
+    constructor() {
+        this.levels = [];
+        this.currentLevel = 1;
+    }
+    
+    generateLevels(count) {
+        const levels = [];
+        
+        for (let i = 1; i <= count; i++) {
+            levels.push(this.createLevel(i));
+        }
+        
+        return levels;
+    }
+    
+    createLevel(number) {
+        const difficulty = Math.min(10, Math.ceil(number / 10));
+        
+        return {
+            id: number,
+            name: this.getLevelName(number),
+            difficulty: difficulty,
+            moves: this.calculateMoves(difficulty),
+            targetScore: 1000 + (number - 1) * 200,
+            goals: this.generateGoals(number),
+            specialRules: this.getSpecialRules(number),
+            theme: this.getTheme(number)
+        };
+    }
+    
+    getLevelName(number) {
+        const themes = [
+            'سوق المدينة',
+            'واحة النخيل', 
+            'ليلة الهلال',
+            'قصر السلطان',
+            'سفينة الصحراء',
+            'مكتبة المعرفة',
+            'سوق التوابل',
+            'نافورة الأحلام',
+            'قلعة الأبطال',
+            'حديقة الأسرار'
+        ];
+        
+        return `${themes[(number - 1) % themes.length]} ${Math.ceil(number / 5)}`;
+    }
+    
+    calculateMoves(difficulty) {
+        return Math.max(15, 30 - difficulty * 2);
+    }
+    
+    generateGoals(levelNumber) {
+        // ... (أهداف المستوى)
+    }
+}
