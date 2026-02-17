@@ -1,39 +1,67 @@
 function calculateAge() {
-    const birthDateInput = document.getElementById('birthDate').value;
-    if (!birthDateInput) {
-        alert("من فضلك اختر تاريخ ميلادك أولاً!");
+    const birthdayInput = document.getElementById('birthday').value;
+    
+    if (!birthdayInput) {
+        alert('الرجاء إدخال تاريخ الميلاد');
         return;
     }
-
-    const birthDate = new Date(birthDateInput);
+    
+    const birthDate = new Date(birthdayInput);
     const today = new Date();
-
+    
+    // حساب العمر
     let years = today.getFullYear() - birthDate.getFullYear();
     let months = today.getMonth() - birthDate.getMonth();
     let days = today.getDate() - birthDate.getDate();
-
-    // تصحيح الحسابات إذا كانت الأيام أو الأشهر سالبة
+    
+    // تعديل القيم السالبة
     if (days < 0) {
         months--;
-        days += new Date(today.getFullYear(), today.getMonth(), 0).getDate();
+        const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+        days += lastMonth.getDate();
     }
+    
     if (months < 0) {
         years--;
         months += 12;
     }
-
-    // عرض النتائج
-    document.getElementById('result').style.display = 'block';
-    document.getElementById('years').innerText = years;
-    document.getElementById('months').innerText = months;
-    document.getElementById('days').innerText = days;
-
-    // حساب الأيام المتبقية لعيد الميلاد القادم
+    
+    // تحديث العمر المعروض
+    const ageElement = document.querySelector('.age-number');
+    ageElement.innerHTML = `
+        <span class="years">${years}</span> سنة 
+        <span class="months">${months}</span> شهر 
+        <span class="days">${days}</span> يوم
+    `;
+    
+    // حساب التفاصيل الإضافية
+    const totalDays = Math.floor((today - birthDate) / (1000 * 60 * 60 * 24));
+    const totalWeeks = Math.floor(totalDays / 7);
+    const totalMonths = years * 12 + months;
+    
+    document.getElementById('totalMonths').textContent = totalMonths;
+    document.getElementById('totalWeeks').textContent = totalWeeks;
+    document.getElementById('totalDays').textContent = totalDays;
+    
+    // حساب عيد الميلاد القادم
     let nextBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
-    if (today > nextBirthday) {
+    if (nextBirthday < today) {
         nextBirthday.setFullYear(today.getFullYear() + 1);
     }
-    const diff = nextBirthday - today;
-    const daysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
-    document.getElementById('remaining').innerText = daysLeft + " يوم";
+    const daysUntilBirthday = Math.ceil((nextBirthday - today) / (1000 * 60 * 60 * 24));
+    
+    document.querySelector('.days-count').textContent = daysUntilBirthday + ' يوم';
 }
+
+// إضافة مستمع حدث لزر Enter
+document.getElementById('birthday').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        calculateAge();
+    }
+});
+
+// حساب العمر تلقائياً عند تحميل الصفحة (للتاريخ الافتراضي)
+window.addEventListener('load', function() {
+    // يمكن تفعيل هذا إذا أردت حساب العمر تلقائياً عند التحميل
+    // calculateAge();
+});
