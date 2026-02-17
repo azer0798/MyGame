@@ -1,12 +1,27 @@
 {
-  "name": "age-calculator-dz",
+  "name": "age-calculator",
   "version": "1.0.0",
-  "main": "app.js",
+  "description": "أداة حساب العمر باليوم والشهر والسنة مع تفاصيل دقيقة",
+  "main": "index.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
+  "keywords": [
+    "age-calculator",
+    "حساب-العمر",
+    "عمر",
+    "تاريخ"
+  ],
+  "author": "azero0798",
+  "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "ejs": "^3.1.9"
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }
