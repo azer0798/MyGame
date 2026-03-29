@@ -1,7 +1,5 @@
-python-telegram-bot==21.10
+python-telegram-bot
 yt-dlp
-pybalt
-ffmpeg-python
 python-dotenv
-aiohttp
-validators
+flask
+requests
