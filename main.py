@@ -1,63 +1,80 @@
 import os
-import asyncio
+import time
+import threading
+import requests
+from flask import Flask
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
 
-# تحميل المتغيرات من ملف .env
+# --- إعداد خادم ويب بسيط ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "البوت يعمل ونشط!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+# --- دالة التنشيط الذاتي (Self-Ping) ---
+def ping_self():
+    """هذه الدالة ترسل طلب للموقع نفسه كل 10 دقائق لمنع النوم"""
+    # استبدل الرابط أدناه برابط موقعك على Render بعد نشره
+    url = os.environ.get("RENDER_EXTERNAL_URL") 
+    
+    if not url:
+        print("تحذير: لم يتم العثور على رابط الموقع في المتغيرات البيئية.")
+        return
+
+    while True:
+        try:
+            requests.get(url)
+            print(f"تم إرسال نبضة تنشيط إلى: {url}")
+        except Exception as e:
+            print(f"خطأ في إرسال النبضة: {e}")
+        
+        time.sleep(600) # انتظر 10 دقائق (600 ثانية)
+
+def start_keep_alive():
+    # تشغيل خادم Flask في خيط منفصل
+    threading.Thread(target=run_flask, daemon=True).start()
+    # تشغيل دالة التنشيط الذاتي في خيط منفصل
+    threading.Thread(target=ping_self, daemon=True).start()
+
+# --- إعدادات البوت ---
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# إعدادات yt-dlp للتحميل بأفضل جودة
-YDL_OPTIONS = {
-    'format': 'best',
-    'noplaylist': True,
-    'quiet': True,
-    'outtmpl': 'downloads/%(title)s.%(ext)s',
-}
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("أهلاً بك! أرسل لي رابط الفيديو من أي موقع وسأقوم بتحميله لك.")
+    await update.message.reply_text("أهلاً بك! أرسل الرابط وسأقوم بالتحميل.")
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    status_msg = await update.message.reply_text("جاري معالجة الرابط، يرجى الانتظار... ⏳")
-
+    status = await update.message.reply_text("جاري المعالجة... ⏳")
     try:
-        # إنشاء مجلد للتحميلات إذا لم يكن موجوداً
-        if not os.path.exists('downloads'):
-            os.makedirs('downloads')
-
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            # استخراج معلومات الفيديو والتحميل
+        with yt_dlp.YoutubeDL({'format': 'best'}) as ydl:
             info = ydl.extract_info(url, download=True)
-            video_file = ydl.prepare_filename(info)
-
-        # إرسال الفيديو للمستخدم
-        await update.message.reply_video(video=open(video_file, 'rb'), caption=f"تم التحميل بنجاح: {info.get('title')}")
+            file = ydl.prepare_filename(info)
         
-        # حذف الملف من السيرفر بعد الإرسال لتوفير المساحة
-        os.remove(video_file)
-        await status_msg.delete()
-
+        await update.message.reply_video(video=open(file, 'rb'))
+        os.remove(file)
+        await status.delete()
     except Exception as e:
-        await status_msg.edit_text(f"عذراً، حدث خطأ أثناء التحميل: {str(e)}")
+        await status.edit_text(f"خطأ: {str(e)}")
 
 def main():
-    if not TOKEN:
-        print("خطأ: لم يتم العثور على TELEGRAM_BOT_TOKEN في ملف .env")
-        return
+    # تشغيل نظام منع الإيقاف
+    start_keep_alive()
 
-    # بناء التطبيق
-    application = Application.builder().token(TOKEN).build()
+    app_telegram = Application.builder().token(TOKEN).build()
+    app_telegram.add_handler(CommandHandler("start", start))
+    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
 
-    # إضافة الأوامر والمستقبلات
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
-
-    print("البوت يعمل الآن...")
-    application.run_polling()
+    print("البوت قيد التشغيل...")
+    app_telegram.run_polling()
 
 if __name__ == '__main__':
     main()
