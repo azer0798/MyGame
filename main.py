@@ -1,5 +1,5 @@
 import os
-import time
+import asyncio
 import threading
 import requests
 from flask import Flask
@@ -8,73 +8,71 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
 
-# --- إعداد خادم ويب بسيط ---
+# --- نظام منع الإيقاف (Keep Alive) ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "البوت يعمل ونشط!"
+def home(): return "البوت نشط ويعالج عدة طلبات!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- دالة التنشيط الذاتي (Self-Ping) ---
-def ping_self():
-    """هذه الدالة ترسل طلب للموقع نفسه كل 10 دقائق لمنع النوم"""
-    # استبدل الرابط أدناه برابط موقعك على Render بعد نشره
-    url = os.environ.get("RENDER_EXTERNAL_URL") 
-    
-    if not url:
-        print("تحذير: لم يتم العثور على رابط الموقع في المتغيرات البيئية.")
-        return
-
-    while True:
-        try:
-            requests.get(url)
-            print(f"تم إرسال نبضة تنشيط إلى: {url}")
-        except Exception as e:
-            print(f"خطأ في إرسال النبضة: {e}")
-        
-        time.sleep(600) # انتظر 10 دقائق (600 ثانية)
-
 def start_keep_alive():
-    # تشغيل خادم Flask في خيط منفصل
     threading.Thread(target=run_flask, daemon=True).start()
-    # تشغيل دالة التنشيط الذاتي في خيط منفصل
-    threading.Thread(target=ping_self, daemon=True).start()
 
-# --- إعدادات البوت ---
-load_dotenv()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# --- إعدادات التحميل الاحترافية ---
+# قمنا بإضافة نظام الترقيم العشوائي لأسماء الملفات لتجنب تداخل ملفات المستخدمين
+YDL_OPTIONS = {
+    'format': 'best',
+    'noplaylist': True,
+    'quiet': True,
+    'outtmpl': 'downloads/%(id)s_%(timestamp)s.%(ext)s', # اسم ملف فريد لكل عملية
+}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("أهلاً بك! أرسل الرابط وسأقوم بالتحميل.")
+# دالة التحميل (Blocking function)
+def sync_download(url):
+    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)
 
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
-    status = await update.message.reply_text("جاري المعالجة... ⏳")
+    user_id = update.effective_user.id
+    status = await update.message.reply_text("⏳ جاري بدء التحميل... يمكنك إرسال روابط أخرى!")
+
     try:
-        with yt_dlp.YoutubeDL({'format': 'best'}) as ydl:
-            info = ydl.extract_info(url, download=True)
-            file = ydl.prepare_filename(info)
+        # تشغيل التحميل في خيط منفصل (Thread) لعدم تعطيل البوت عن المستخدمين الآخرين
+        loop = asyncio.get_event_loop()
+        file_path = await loop.run_in_executor(None, sync_download, url)
+
+        # إرسال الفيديو (هذه العملية غير متزامنة ولا تعطل البوت)
+        with open(file_path, 'rb') as video:
+            await update.message.reply_video(video=video, caption="✅ تم التحميل بنجاح!")
         
-        await update.message.reply_video(video=open(file, 'rb'))
-        os.remove(file)
+        # تنظيف الملفات فوراً
+        if os.path.exists(file_path):
+            os.remove(file_path)
         await status.delete()
+
     except Exception as e:
-        await status.edit_text(f"خطأ: {str(e)}")
+        await status.edit_text(f"❌ حدث خطأ: {str(e)}")
+
+# --- الإعداد الأساسي ---
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 def main():
-    # تشغيل نظام منع الإيقاف
+    if not os.path.exists('downloads'): os.makedirs('downloads')
     start_keep_alive()
 
-    app_telegram = Application.builder().token(TOKEN).build()
-    app_telegram.add_handler(CommandHandler("start", start))
-    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
+    # تشغيل البوت بنظام القوى القصوى
+    application = Application.builder().token(TOKEN).concurrent_updates(True).build()
+    
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
 
-    print("البوت قيد التشغيل...")
-    app_telegram.run_polling()
+    print("البوت يعمل الآن بنظام المعالجة المتعددة...")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
