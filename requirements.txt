@@ -1,5 +1,9 @@
-python-telegram-bot
-yt-dlp
-python-dotenv
-flask
-requests
+python-telegram-bot==20.7
+yt-dlp==2024.12.23
+python-dotenv==1.0.1
+flask==3.0.3
+requests==2.32.3
+aiohttp==3.10.0
+cryptography==43.0.1
+brotli==1.1.0
+websockets==13.1
