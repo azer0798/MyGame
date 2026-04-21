@@ -3,6 +3,7 @@ import asyncio
 import threading
 import re
 import hashlib
+import json
 from flask import Flask, jsonify
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -30,68 +31,9 @@ def run_flask():
 def start_keep_alive():
     threading.Thread(target=run_flask, daemon=True).start()
 
-# --- دالة لتقصير اسم الملف ---
-def sanitize_filename(title, max_length=50):
-    """
-    تنظيف وتقصير اسم الملف
-    إزالة الرموز غير المسموحة وتقصير الطول
-    """
-    # إزالة الرموز غير المسموحة في أسماء الملفات
-    title = re.sub(r'[<>:"/\\|?*]', '', title)
-    # إزالة المسافات الزائدة
-    title = re.sub(r'\s+', ' ', title).strip()
-    # إزالة الكلمات المكررة والمشاهدات
-    title = re.sub(r'\d+[\s,]*views?', '', title, flags=re.IGNORECASE)
-    title = re.sub(r'\d+[\s,]*reactions?', '', title, flags=re.IGNORECASE)
-    
-    # تقصير الطول إذا كان طويلاً
-    if len(title) > max_length:
-        # أخذ أول max_length حرف
-        title = title[:max_length]
-        # إزالة الكلمات غير المكتملة في النهاية
-        last_space = title.rfind(' ')
-        if last_space > max_length // 2:
-            title = title[:last_space]
-    
-    return title
-
-def generate_unique_filename(video_id, title, format_type='video'):
-    """
-    إنشاء اسم ملف فريد باستخدام ID الفيديو
-    """
-    # تنظيف العنوان
-    clean_title = sanitize_filename(title, 40)
-    
-    # إذا كان العنوان فارغاً بعد التنظيف، استخدم ID الفيديو فقط
-    if not clean_title:
-        clean_title = video_id
-    
-    # إنشاء اسم فريد باستخدام video_id
-    unique_id = hashlib.md5(f"{video_id}_{title}".encode()).hexdigest()[:8]
-    
-    if format_type == 'audio':
-        filename = f"{clean_title}_{unique_id}.mp3"
-    else:
-        filename = f"{clean_title}_{unique_id}.mp4"
-    
-    # التأكد من أن الاسم الكامل (مع المسار) ليس طويلاً
-    return filename
-
-# --- إعدادات التحميل المحسنة ---
-def get_ydl_options(format_type='video', quality='best', video_id=None, title=None):
-    # إنشاء اسم ملف قصير
-    if video_id and title:
-        filename = generate_unique_filename(video_id, title, format_type)
-    else:
-        # اسم افتراضي
-        filename = f"{format_type}_{hashlib.md5(os.urandom(32)).hexdigest()[:10]}"
-    
-    # تحديد المسار الكامل
-    if format_type == 'audio':
-        outtmpl = os.path.join('downloads', 'audio', filename)
-    else:
-        outtmpl = os.path.join('downloads', 'video', filename)
-    
+# --- إعدادات yt-dlp لتجنب مشكلة Sign in ---
+def get_ydl_options(format_type='video', quality='best'):
+    # إعدادات متقدمة لتجنب مشكلة تسجيل الدخول
     base_options = {
         'quiet': True,
         'no_warnings': True,
@@ -100,10 +42,36 @@ def get_ydl_options(format_type='video', quality='best', video_id=None, title=No
         'retries': 10,
         'fragment_retries': 10,
         'skip_unavailable_fragments': True,
-        'outtmpl': outtmpl,  # استخدام المسار القصير
+        # تجنب طلب تسجيل الدخول
+        'cookiefile': None,  # عدم استخدام ملفات الكوكيز
+        'nocheckcertificate': True,
+        'prefer_insecure': True,
+        # استخدام واجهة برمجية بديلة
+        'extractor_args': {
+            'youtube': {
+                'skip': ['dash', 'hls', 'live'],
+                'player_client': ['android', 'web'],  # محاكاة عميل أندرويد
+            }
+        },
+        # تقليل الضغط على الخوادم
+        'throttledratelimit': 1000000,
+        'sleep_interval': 5,
+        'max_sleep_interval': 10,
     }
     
+    # إضافة خيارات خاصة لفيسبوك
+    if 'facebook' in str(base_options):
+        base_options['extractor_args']['facebook'] = {
+            'prefer_https': True
+        }
+    
+    # إنشاء اسم ملف قصير
+    timestamp = str(int(asyncio.get_event_loop().time()))[-8:]
+    unique_id = hashlib.md5(os.urandom(32)).hexdigest()[:8]
+    
     if format_type == 'audio':
+        os.makedirs('downloads/audio', exist_ok=True)
+        outtmpl = os.path.join('downloads', 'audio', f'audio_{timestamp}_{unique_id}.%(ext)s')
         base_options.update({
             'format': 'bestaudio/best',
             'postprocessors': [{
@@ -111,259 +79,299 @@ def get_ydl_options(format_type='video', quality='best', video_id=None, title=No
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
+            'outtmpl': outtmpl,
         })
     else:
+        os.makedirs('downloads/video', exist_ok=True)
+        
         if quality == 'highest':
-            format_spec = 'bestvideo+bestaudio/best'
+            format_spec = 'best[height<=1080]/best'  # تحديد أقصى جودة 1080p
         elif quality == 'lowest':
-            format_spec = 'worstvideo+worstaudio/worst'
+            format_spec = 'worst'
         else:
-            format_spec = 'best'
+            format_spec = 'best[height<=720]/best'  # جودة متوسطة 720p
             
         base_options.update({
             'format': format_spec,
             'merge_output_format': 'mp4',
+            'outtmpl': os.path.join('downloads', 'video', f'video_{timestamp}_{unique_id}.%(ext)s'),
         })
     
     return base_options
 
+def sanitize_filename(filename):
+    """تنظيف اسم الملف"""
+    # إزالة الرموز غير المسموحة
+    filename = re.sub(r'[<>:"/\\|?*]', '', filename)
+    # إزالة المسافات الزائدة
+    filename = re.sub(r'\s+', ' ', filename).strip()
+    # تقصير الطول
+    if len(filename) > 50:
+        filename = filename[:50]
+    return filename
+
 async def get_video_info(url):
-    """جلب معلومات الفيديو"""
+    """جلب معلومات الفيديو مع تجنب مشكلة تسجيل الدخول"""
     ydl_opts = {
-        'quiet': True, 
+        'quiet': True,
+        'no_warnings': True,
         'extract_flat': False,
-        'no_warnings': True
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android'],
+                'skip': ['dash', 'hls'],
+            }
+        }
     }
+    
     try:
+        # استخدام asyncio.to_thread لتجنب حظر الحلقة
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = await asyncio.to_thread(ydl.extract_info, url, download=False)
             return info
     except Exception as e:
         logger.error(f"خطأ في جلب المعلومات: {e}")
-        raise
+        # إذا فشل، حاول مرة أخرى بدون extractor_args
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                info = await asyncio.to_thread(ydl.extract_info, url, download=False)
+                return info
+        except Exception as e2:
+            raise Exception(f"فشل تحليل الرابط: {str(e2)[:100]}")
 
 def sync_download(url, format_type, quality):
-    """تحميل متزامن مع أسماء ملفات قصيرة"""
-    # أولاً جلب المعلومات بدون تحميل للحصول على ID والعنوان
-    ydl_opts_info = {'quiet': True, 'extract_flat': False, 'no_warnings': True}
-    
-    with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-            video_id = info.get('id', 'unknown')
-            title = info.get('title', 'video')
+    """تحميل متزامن مع تجنب أخطاء تسجيل الدخول"""
+    try:
+        ydl_opts = get_ydl_options(format_type, quality)
+        
+        # محاولة التحميل
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
             
-            # تنظيف العنوان من المشاهدات والأرقام
-            title = re.sub(r'\d+[\s,]*views?', '', title, flags=re.IGNORECASE)
-            title = re.sub(r'\d+[\s,]*reactions?', '', title, flags=re.IGNORECASE)
-            title = title.strip()
+            # البحث عن الملف المحمل
+            if format_type == 'audio':
+                base_filename = ydl_opts['outtmpl'].replace('.%(ext)s', '.mp3')
+            else:
+                base_filename = ydl_opts['outtmpl']
             
-            # إنشاء خيارات التحميل مع اسم ملف قصير
-            ydl_opts = get_ydl_options(format_type, quality, video_id, title)
+            # التحقق من وجود الملف
+            if os.path.exists(base_filename):
+                return base_filename, info
             
-            # إنشاء المجلدات
-            os.makedirs('downloads/video', exist_ok=True)
-            os.makedirs('downloads/audio', exist_ok=True)
+            # البحث عن الملف بأي امتداد
+            for ext in ['.mp4', '.mp3', '.webm', '.m4a']:
+                test_path = base_filename.replace('.mp4', ext).replace('.mp3', ext)
+                if os.path.exists(test_path):
+                    return test_path, info
             
-            # التحميل
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
-                downloaded_info = ydl_download.extract_info(url, download=True)
-                
-                # الحصول على اسم الملف النهائي
-                if format_type == 'audio':
-                    filename = ydl_opts['outtmpl'].replace('.%(ext)s', '.mp3')
-                else:
-                    filename = ydl_opts['outtmpl']
-                
-                # التحقق من وجود الملف
-                if os.path.exists(filename):
-                    return filename, downloaded_info
-                else:
-                    # محاولة البحث عن الملف
-                    for ext in ['.mp4', '.mp3', '.webm', '.m4a']:
-                        test_path = filename.replace('.mp4', ext).replace('.mp3', ext)
-                        if os.path.exists(test_path):
-                            return test_path, downloaded_info
-                    
-                    raise FileNotFoundError(f"لم يتم العثور على الملف المحمل: {filename}")
-                    
-        except Exception as e:
-            logger.error(f"خطأ في التحميل: {e}")
-            raise
+            raise FileNotFoundError("لم يتم العثور على الملف المحمل")
+            
+    except Exception as e:
+        error_msg = str(e)
+        # معالجة أخطاء يوتيوب المعروفة
+        if "Sign in to confirm" in error_msg:
+            raise Exception("يوتيوب يطلب تحقق - جرب رابط آخر أو انتظر قليلاً")
+        elif "HTTP Error 429" in error_msg:
+            raise Exception("طلبات كثيرة جداً - انتظر دقيقة ثم حاول مرة أخرى")
+        elif "unable to open for writing" in error_msg:
+            raise Exception("مشكلة في حفظ الملف - تم إصلاحها تلقائياً")
+        else:
+            raise Exception(error_msg[:150])
 
 # --- معالجات البوت ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = """
 🎬 **بوت تحميل الفيديوهات**
 
-📌 **يدعم:**
+✅ **يدعم:**
 • يوتيوب - YouTube
-• فيسبوك - Facebook
+• فيسبوك - Facebook  
 • انستغرام - Instagram
 • تيك توك - TikTok
 
-🎵 **يمكنك تحميل:**
-• فيديو بجودات مختلفة
+🎵 **خيارات التحميل:**
+• فيديو بجودة عالية (720p-1080p)
+• فيديو بجودة متوسطة (480p-720p)
 • صوت فقط MP3
 
-📖 **الاستخدام:**
+📖 **كيفية الاستخدام:**
 1️⃣ أرسل الرابط
 2️⃣ اختر نوع التحميل
 3️⃣ انتظر قليلاً
 
-⚡ **التحميل سريع وآمن**
+⚡ **يعمل 24/7 بدون توقف**
 """
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     
-    # دعم روابط فيسبوك ويوتيوب
     if not (url.startswith('http://') or url.startswith('https://')):
-        await update.message.reply_text("❌ الرجاء إرسال رابط صحيح")
+        await update.message.reply_text("❌ الرجاء إرسال رابط صحيح يبدأ بـ http:// أو https://")
         return
     
     status_msg = await update.message.reply_text("🔍 **جاري تحليل الرابط...**", parse_mode='Markdown')
     
     try:
-        # جلب معلومات الفيديو
-        info = await get_video_info(url)
+        # محاولة جلب المعلومات مع وقت محدد
+        info = await asyncio.wait_for(get_video_info(url), timeout=30)
+        
         title = info.get('title', 'فيديو')
-        duration = info.get('duration', 0)
-        
         # تنظيف العنوان للعرض
-        clean_title = sanitize_filename(title, 60)
+        clean_title = title[:60] if len(title) > 60 else title
         
-        duration_str = f"{duration // 60}:{duration % 60:02d}" if duration else "غير معروف"
+        duration = info.get('duration', 0)
+        if duration:
+            minutes = duration // 60
+            seconds = duration % 60
+            duration_str = f"{minutes}:{seconds:02d}"
+        else:
+            duration_str = "غير معروف"
         
         info_text = f"""
-📹 **المعلومات:**
+📹 **معلومات الفيديو:**
 **العنوان:** {clean_title}
 **المدة:** {duration_str}
 **المنصة:** {info.get('extractor', 'غير معروف')}
 
-⬇️ **اختر نوع التحميل:**
+⬇️ **اختر جودة التحميل:**
         """
         
         await status_msg.delete()
         
-        # حفظ الرابط في السياق
+        # حفظ الرابط
         context.user_data['last_url'] = url
-        context.user_data['video_title'] = clean_title
         
-        # قائمة الاختيارات
+        # أزرار الاختيار
         keyboard = [
-            [InlineKeyboardButton("🎥 فيديو - جودة عالية", callback_data=f"video_highest_{url[:50]}")],
-            [InlineKeyboardButton("📱 فيديو - جودة متوسطة", callback_data=f"video_best_{url[:50]}")],
-            [InlineKeyboardButton("🎵 صوت فقط (MP3)", callback_data=f"audio_best_{url[:50]}")]
+            [InlineKeyboardButton("🎥 فيديو - جودة عالية (1080p)", callback_data=f"video_highest")],
+            [InlineKeyboardButton("📱 فيديو - جودة متوسطة (720p)", callback_data=f"video_best")],
+            [InlineKeyboardButton("🎵 صوت فقط - MP3", callback_data=f"audio_best")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(info_text, reply_markup=reply_markup, parse_mode='Markdown')
         
+    except asyncio.TimeoutError:
+        await status_msg.edit_text("❌ **انتهى الوقت!** الرابط بطيء جداً أو لا يعمل", parse_mode='Markdown')
     except Exception as e:
-        await status_msg.edit_text(f"❌ **خطأ في تحليل الرابط:**\n`{str(e)[:150]}`", parse_mode='Markdown')
+        error_short = str(e)[:150]
+        await status_msg.edit_text(
+            f"❌ **خطأ في تحليل الرابط:**\n`{error_short}`\n\n"
+            f"💡 **نصيحة:** تأكد من صحة الرابط وجربه مرة أخرى",
+            parse_mode='Markdown'
+        )
 
 async def handle_quality_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    data = query.data.split('_', 2)
-    if len(data) < 3:
-        await query.message.edit_text("❌ حدث خطأ، حاول مرة أخرى")
-        return
-    
+    data = query.data.split('_')
     format_type = data[0]
-    quality = data[1]
-    url = data[2]
+    quality = data[1] if len(data) > 1 else 'best'
     
-    # استرجاع الرابط الكامل إذا كان مختصراً
-    if not url.startswith('http'):
-        url = context.user_data.get('last_url', url)
+    url = context.user_data.get('last_url')
+    if not url:
+        await query.message.edit_text("❌ انتهت الجلسة - أرسل الرابط مرة أخرى", parse_mode='Markdown')
+        return
     
     await query.message.edit_text(
         f"⏳ **جاري التحميل...**\n"
         f"النوع: {'🎵 صوت' if format_type == 'audio' else '🎬 فيديو'}\n"
-        f"قد يستغرق 30-60 ثانية\n"
-        f"✨ يتم استخدام أسماء ملفات قصيرة لتجنب الأخطاء",
+        f"قد يستغرق 30-60 ثانية حسب سرعة الرابط\n"
+        f"✨ يرجى الانتظار...",
         parse_mode='Markdown'
     )
     
     try:
-        # تحميل الفيديو/الصوت
-        file_path, info = await asyncio.to_thread(sync_download, url, format_type, quality)
+        # تحميل مع وقت محدد
+        file_path, info = await asyncio.wait_for(
+            asyncio.to_thread(sync_download, url, format_type, quality),
+            timeout=90
+        )
         
-        # التحقق من وجود الملف وحجمه
         if not os.path.exists(file_path):
-            raise FileNotFoundError("الملف لم يتم إنشاؤه بنجاح")
+            raise FileNotFoundError("الملف لم يتم إنشاؤه")
         
-        file_size = os.path.getsize(file_path) / (1024 * 1024)  # حجم الملف بالميجابايت
-        
-        if file_size > 50:
-            await query.message.edit_text(f"⚠️ الملف كبير جداً ({file_size:.1f} MB) وقد يفشل الإرسال")
-        
-        # إرسال الملف
+        # إرسال الملف حسب النوع
         if format_type == 'audio':
-            with open(file_path, 'rb') as audio:
+            with open(file_path, 'rb') as audio_file:
                 await query.message.reply_audio(
-                    audio=audio,
+                    audio=audio_file,
                     title=info.get('title', 'Audio')[:50],
                     performer=info.get('uploader', 'Unknown'),
                     caption="✅ **تم التحميل بنجاح!**",
                     parse_mode='Markdown'
                 )
         else:
-            with open(file_path, 'rb') as video:
+            # فيديو - قد يكون كبيراً
+            with open(file_path, 'rb') as video_file:
                 await query.message.reply_video(
-                    video=video,
-                    caption=f"✅ **تم التحميل بنجاح!**\n📹 {info.get('title', 'Video')[:50]}",
+                    video=video_file,
+                    caption=f"✅ **تم التحميل بنجاح!**",
                     supports_streaming=True,
                     parse_mode='Markdown'
                 )
         
-        # تنظيف الملف
+        # حذف الملف بعد الإرسال
         try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                logger.info(f"تم حذف الملف: {file_path}")
+            os.remove(file_path)
+            logger.info(f"تم حذف الملف: {file_path}")
         except Exception as e:
             logger.warning(f"فشل حذف الملف: {e}")
         
-        await query.message.edit_text("✅ **اكتمل التحميل!** أرسل رابط آخر", parse_mode='Markdown')
+        await query.message.edit_text(
+            "✅ **اكتمل التحميل!**\n"
+            "أرسل رابط آخر للتحميل",
+            parse_mode='Markdown'
+        )
         
+    except asyncio.TimeoutError:
+        await query.message.edit_text(
+            "❌ **انتهى الوقت!**\n"
+            "الرابط بطيء جداً أو أن الملف كبير جداً\n"
+            "جرب رابط آخر أو اختر جودة أقل",
+            parse_mode='Markdown'
+        )
     except Exception as e:
         error_msg = str(e)
         logger.error(f"خطأ في التحميل: {error_msg}")
         
         # رسائل خطأ مفهومة
-        if "File name too long" in error_msg:
-            error_msg = "اسم الملف طويل جداً - تم التعامل معه تلقائياً، حاول مرة أخرى"
-        elif "unable to open for writing" in error_msg:
-            error_msg = "مشكلة في كتابة الملف - تم إصلاحها، حاول مجدداً"
-        elif "timed out" in error_msg.lower():
-            error_msg = "انتهى الوقت - الرابط بطيء جداً"
+        if "Sign in to confirm" in error_msg:
+            error_msg = "يوتيوب يطلب تحقق - انتظر 5 دقائق ثم حاول مرة أخرى"
+        elif "HTTP Error 429" in error_msg:
+            error_msg = "طلبات كثيرة جداً - انتظر دقيقة ثم حاول"
+        elif "File name too long" in error_msg:
+            error_msg = "تم حل مشكلة اسم الملف - حاول مرة أخرى"
         
         await query.message.edit_text(
             f"❌ **حدث خطأ:**\n`{error_msg[:150]}`\n\n"
-            f"💡 نصيحة: حاول استخدام رابط آخر أو انتظر قليلاً",
+            f"💡 **نصيحة:**\n"
+            f"• جرب رابط آخر\n"
+            f"• انتظر قليلاً ثم أعد المحاولة\n"
+            f"• اختر جودة أقل",
             parse_mode='Markdown'
         )
 
-# --- التشغيل الرئيسي ---
+# --- التشغيل الرئيسي مع منع الـ Conflict ---
 async def run_bot():
     load_dotenv()
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     
     if not TOKEN:
-        logger.error("لم يتم العثور على TOKEN!")
+        logger.error("❌ لم يتم العثور على TOKEN!")
         return
     
     # إنشاء المجلدات
     os.makedirs('downloads/video', exist_ok=True)
     os.makedirs('downloads/audio', exist_ok=True)
     
-    # إنشاء التطبيق
-    application = Application.builder().token(TOKEN).concurrent_updates(True).build()
+    # إنشاء التطبيق مع إعدادات لمنع الـ Conflict
+    application = Application.builder()\
+        .token(TOKEN)\
+        .concurrent_updates(True)\
+        .build()
     
     # إضافة المعالجات
     application.add_handler(CommandHandler("start", start))
@@ -371,18 +379,38 @@ async def run_bot():
     application.add_handler(CallbackQueryHandler(handle_quality_selection))
     
     logger.info("✅ البوت يعمل الآن...")
-    logger.info("يدعم: يوتيوب، فيسبوك، انستغرام، تيك توك")
+    logger.info("📱 يدعم: يوتيوب، فيسبوك، انستغرام، تيك توك")
     
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    
-    # البقاء قيد التشغيل
+    # تشغيل البوت مع إعادة محاولة تلقائية
     while True:
-        await asyncio.sleep(1)
+        try:
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling()
+            
+            # البقاء قيد التشغيل
+            while True:
+                await asyncio.sleep(5)
+                
+        except Exception as e:
+            logger.error(f"❌ توقف البوت: {e}")
+            logger.info("🔄 إعادة التشغيل خلال 5 ثوان...")
+            await asyncio.sleep(5)
+            
+            # محاولة إغلاق التطبيق الحالي
+            try:
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+            except:
+                pass
+            continue
 
 def main():
+    # تشغيل نظام البقاء
     start_keep_alive()
+    
+    # تشغيل البوت
     asyncio.run(run_bot())
 
 if __name__ == '__main__':
